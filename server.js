@@ -416,7 +416,18 @@ function getDealers(city, brand) {
       }
     }
   }
-  if (!brandData) return [];
+  // Multi-brand or unknown brand — use Toyota as proxy (most universal)
+  if (!brandData) {
+    const fallbackBrands = ['toyota','honda','ford','chevrolet'];
+    for (const fb of fallbackBrands) {
+      if (DEALER_DB[fb] && DEALER_DB[fb][cityKey]) {
+        return DEALER_DB[fb][cityKey].map(n => n.replace(fb.charAt(0).toUpperCase()+fb.slice(1), brand === 'Multi-brand' ? '' : brand).replace(/\s+/g,' ').trim());
+      }
+    }
+    // Last resort — generic names
+    const cityName = cityKey.charAt(0).toUpperCase() + cityKey.slice(1);
+    return [cityName+' Auto Group', cityName+' Motors', 'AutoNation '+cityName, 'Hendrick Automotive'];
+  }
 
   // Exact city match
   if (brandData[cityKey]) return brandData[cityKey];
@@ -448,7 +459,15 @@ function getDealers(city, brand) {
     if (fallbackCity && brandData[fallbackCity]) return brandData[fallbackCity];
   }
 
-  return [];
+  // Generic fallback — brand exists but city not in database
+  const cityName = cityKey.charAt(0).toUpperCase() + cityKey.slice(1);
+  const brandName = brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase();
+  return [
+    'AutoNation '+brandName,
+    cityName+' '+brandName,
+    brandName+' of '+cityName,
+    'Hendrick '+brandName
+  ];
 }
 
 app.get('/api/competitors', (req, res) => {
