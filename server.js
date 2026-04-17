@@ -7,51 +7,102 @@ const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const GOOGLE_KEY = process.env.GOOGLE_API_KEY;
-
 app.get('/api/competitors', async (req, res) => {
   const { city, brand } = req.query;
   if (!city || !brand) return res.json({ results: [] });
-  
+
   try {
-    // Search broadly — works for both big cities and small towns
-    const query = encodeURIComponent(`${brand} dealership ${city}`);
-    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${GOOGLE_KEY}`;
-    
-    console.log(`Searching: ${brand} dealership ${city}`);
-    const response = await fetch(url);
-    const data = await response.json();
-    console.log(`Status: ${data.status}, Results: ${data.results ? data.results.length : 0}`);
-    
-    if (data.status === 'OK' && data.results && data.results.length > 0) {
-      const results = data.results.slice(0, 6).map((p, i) => ({
-        name: p.name,
-        address: (p.formatted_address || '').split(',').slice(0, 2).join(',').trim(),
-        rating: p.rating || null,
-        threat: i < 2 ? 'threat' : 'watch'
-      }));
-      return res.json({ results, status: data.status });
+    // Step 1: Geocode the city to get lat/lng
+    const geoUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city)}&format=json&limit=1`;
+    const geoRes = await fetch(geoUrl, { headers: { 'User-Agent': 'ViniTool/1.0' } });
+    const geoData = await geoRes.json();
+
+    if (!geoData || geoData.length === 0) {
+      console.log('Geocoding failed for:', city);
+      return res.json({ results: [] });
     }
-    
-    // If no results, try without the brand name — search any car dealer near city
-    const query2 = encodeURIComponent(`car dealership near ${city}`);
-    const url2 = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query2}&key=${GOOGLE_KEY}`;
-    console.log(`Fallback search: car dealership near ${city}`);
-    const response2 = await fetch(url2);
-    const data2 = await response2.json();
-    console.log(`Fallback status: ${data2.status}, Results: ${data2.results ? data2.results.length : 0}`);
-    
-    if (data2.status === 'OK' && data2.results && data2.results.length > 0) {
-      const results = data2.results.slice(0, 6).map((p, i) => ({
-        name: p.name,
-        address: (p.formatted_address || '').split(',').slice(0, 2).join(',').trim(),
-        rating: p.rating || null,
-        threat: i < 2 ? 'threat' : 'watch'
-      }));
-      return res.json({ results, status: data2.status });
+
+    const lat = geoData[0].lat;
+    const lon = geoData[0].lon;
+    console.log(`City: ${city} → lat:${lat}, lon:${lon}`);
+
+    // Step 2: Search for car dealers near that location using Overpass API
+    const radius = 80000; // 80km radius
+    const overpassQuery = `
+      [out:json][timeout:25];
+      (
+        node["shop"="car"]["name"~"${brand}",i](around:${radius},${lat},${lon});
+        way["shop"="car"]["name"~"${brand}",i](around:${radius},${lat},${lon});
+        node["shop"="car_dealer"]["name"~"${brand}",i](around:${radius},${lat},${lon});
+        way["shop"="car_dealer"]["name"~"${brand}",i](around:${radius},${lat},${lon});
+      );
+      out center 8;
+    `;
+
+    const overpassUrl = 'https://overpass-api.de/api/interpreter';
+    const overpassRes = await fetch(overpassUrl, {
+      method: 'POST',
+      body: overpassQuery,
+      headers: { 'Content-Type': 'text/plain', 'User-Agent': 'ViniTool/1.0' }
+    });
+    const overpassData = await overpassRes.json();
+
+    console.log(`Overpass results: ${overpassData.elements ? overpassData.elements.length : 0}`);
+
+    if (overpassData.elements && overpassData.elements.length > 0) {
+      const results = overpassData.elements
+        .filter(e => e.tags && e.tags.name)
+        .slice(0, 6)
+        .map((e, i) => ({
+          name: e.tags.name,
+          address: [e.tags['addr:city'], e.tags['addr:state']].filter(Boolean).join(', ') || city,
+          rating: null,
+          threat: i < 2 ? 'threat' : 'watch'
+        }));
+
+      if (results.length > 0) {
+        console.log('Found dealers:', results.map(r => r.name).join(', '));
+        return res.json({ results });
+      }
     }
-    
-    res.json({ results: [], status: data.status, error: data.error_message });
+
+    // Step 3: Broader fallback — search any car dealer near city
+    const fallbackQuery = `
+      [out:json][timeout:25];
+      (
+        node["shop"="car"](around:${radius},${lat},${lon});
+        way["shop"="car"](around:${radius},${lat},${lon});
+        node["shop"="car_dealer"](around:${radius},${lat},${lon});
+        way["shop"="car_dealer"](around:${radius},${lat},${lon});
+      );
+      out center 8;
+    `;
+
+    const fallbackRes = await fetch(overpassUrl, {
+      method: 'POST',
+      body: fallbackQuery,
+      headers: { 'Content-Type': 'text/plain', 'User-Agent': 'ViniTool/1.0' }
+    });
+    const fallbackData = await fallbackRes.json();
+    console.log(`Fallback results: ${fallbackData.elements ? fallbackData.elements.length : 0}`);
+
+    if (fallbackData.elements && fallbackData.elements.length > 0) {
+      const results = fallbackData.elements
+        .filter(e => e.tags && e.tags.name)
+        .slice(0, 6)
+        .map((e, i) => ({
+          name: e.tags.name,
+          address: [e.tags['addr:city'], e.tags['addr:state']].filter(Boolean).join(', ') || city,
+          rating: null,
+          threat: i < 2 ? 'threat' : 'watch'
+        }));
+
+      if (results.length > 0) {
+        return res.json({ results });
+      }
+    }
+
+    res.json({ results: [] });
   } catch(e) {
     console.log('Error:', e.message);
     res.json({ results: [], error: e.message });
@@ -62,7 +113,9 @@ app.get('/api/image-proxy', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send('No URL');
   try {
-    const response = await fetch(decodeURIComponent(url));
+    const response = await fetch(decodeURIComponent(url), {
+      headers: { 'User-Agent': 'ViniTool/1.0' }
+    });
     const contentType = response.headers.get('content-type') || 'image/jpeg';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
