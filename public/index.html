@@ -168,7 +168,7 @@ input[type=range]{width:100%;accent-color:var(--gold);cursor:pointer;}
 <div id="sdrResult">
   <div class="share-card">
     <div class="share-title">Report ready. Send this link.</div>
-    <div class="share-sub">The dealer clicks this link, sees their personalised report with live sliders, real local competitors, and your booking button. Nothing internal visible — just their report.</div>
+    <div class="share-sub">The dealer clicks this link, sees their personalised report with live sliders, real local competitors, and your booking button.</div>
     <div class="link-box" id="shareLink"></div>
     <button class="copy-btn" id="copyBtn" onclick="copyLink()">Copy link — paste into WhatsApp or email →</button>
     <button class="new-btn" onclick="newDealer()">← Generate for another dealer</button>
@@ -218,7 +218,7 @@ input[type=range]{width:100%;accent-color:var(--gold);cursor:pointer;}
   <div class="comp-card">
     <div class="comp-head"><span class="ch-t" id="compTitle">Nearby dealerships</span><span class="ch-s">Competing for the same after-hours buyers</span></div>
     <div id="compRows"></div>
-    <div class="comp-foot" id="compFoot">Live data · Google Places API</div>
+    <div class="comp-foot" id="compFoot">Based on local market data</div>
   </div>
   <div class="cta-card">
     <div class="cta-t" id="ctaT">VINI closes this gap.</div>
@@ -228,7 +228,7 @@ input[type=range]{width:100%;accent-color:var(--gold);cursor:pointer;}
   </div>
   <div class="sources">
     <div class="src-t">Data sources</div>
-    <div class="src">[1] Unanswered call rate: <a href="https://www.invoca.com/blog/lost-sales-car-dealerships-repair" target="_blank">Invoca Automotive Report, 2024</a><br>[2] AI appointments: <a href="https://news.dealershipguy.com" target="_blank">DealershipGuy AI ROI Analysis, 2024</a><br>[3] Close rate &amp; gross profit: NADA 2024 Dealership Financial Profile<br>[4] Competitor data: Google Places API — live search</div>
+    <div class="src">[1] Unanswered call rate: <a href="https://www.invoca.com/blog/lost-sales-car-dealerships-repair" target="_blank">Invoca Automotive Report, 2024</a><br>[2] AI appointments: <a href="https://news.dealershipguy.com" target="_blank">DealershipGuy AI ROI Analysis, 2024</a><br>[3] Close rate &amp; gross profit: NADA 2024 Dealership Financial Profile</div>
   </div>
 </div>
 
@@ -256,7 +256,6 @@ window.addEventListener('load', () => {
   }
 });
 
-const spinMsgs = ['Searching for real nearby competitors...','Calculating missed revenue...','Building your report...','Almost ready...'];
 function fmt(n){return '$'+Math.round(n).toLocaleString();}
 
 async function generate() {
@@ -268,45 +267,59 @@ async function generate() {
   const image = document.getElementById('f-image').value.trim();
   const booking = document.getElementById('f-booking').value.trim()||'https://calendly.com/archit-gupta-spyne/30min';
   if (!dealer||!city){alert('Please enter dealership name and city.');return;}
-  document.getElementById('goBtn').disabled=true;
-  document.getElementById('sdrPage').style.display='none';
+
+  document.getElementById('goBtn').disabled = true;
+  document.getElementById('sdrPage').style.display = 'none';
   document.getElementById('loadingPage').classList.add('on');
-  let si=0;
-  document.getElementById('spinMsg').textContent=spinMsgs[0];
-  const iv=setInterval(()=>{si=(si+1)%spinMsgs.length;document.getElementById('spinMsg').textContent=spinMsgs[si];},800);
-  let comps=[];
+
+  const msgs = ['Searching for nearby competitors...','Calculating missed revenue...','Building your report...','Almost ready...'];
+  let mi = 0;
+  document.getElementById('spinMsg').textContent = msgs[0];
+  const iv = setInterval(()=>{ mi=(mi+1)%msgs.length; document.getElementById('spinMsg').textContent=msgs[mi]; }, 900);
+
+  let comps = [];
   try {
-    const res = await fetch(`/api/competitors?city=${encodeURIComponent(city)}&brand=${encodeURIComponent(brand)}`);
+    const res = await fetch('/api/competitors?city='+encodeURIComponent(city)+'&brand='+encodeURIComponent(brand));
     const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      comps = data.results.filter(c=>!c.name.toLowerCase().includes(dealer.toLowerCase().split(' ')[0])).slice(0,3);
+    // FIX: use data.competitors (not data.results)
+    if (data.competitors && data.competitors.length > 0) {
+      comps = data.competitors
+        .filter(c => !c.name.toLowerCase().includes(dealer.toLowerCase().split(' ')[0]))
+        .slice(0, 3)
+        .map((c, i) => ({ ...c, threat: i === 0 ? 'threat' : 'watch' }));
     }
-  } catch(e){console.log('Competitor search failed',e);}
+  } catch(e) { console.log('Competitor fetch failed', e); }
+
   clearInterval(iv);
-  reportData = {dealer,brand,contact,role,city,booking,image,comps};
+  reportData = { dealer, brand, contact, role, city, booking, image, comps };
+
   const params = new URLSearchParams({
-    view:'report',
-    dealer:encodeURIComponent(dealer),
-    brand:encodeURIComponent(brand),
-    contact:encodeURIComponent(contact),
-    city:encodeURIComponent(city),
-    booking:encodeURIComponent(booking),
-    image:encodeURIComponent(image),
-    comps:encodeURIComponent(JSON.stringify(comps))
+    view: 'report',
+    dealer: encodeURIComponent(dealer),
+    brand: encodeURIComponent(brand),
+    contact: encodeURIComponent(contact),
+    city: encodeURIComponent(city),
+    booking: encodeURIComponent(booking),
+    image: encodeURIComponent(image),
+    comps: encodeURIComponent(JSON.stringify(comps))
   });
-  const shareURL = BASE+'/?'+params.toString();
+
+  const shareURL = BASE + '/?' + params.toString();
   document.getElementById('loadingPage').classList.remove('on');
-  document.getElementById('shareLink').textContent=shareURL;
+  document.getElementById('shareLink').textContent = shareURL;
   document.getElementById('sdrResult').classList.add('on');
-  document.getElementById('goBtn').disabled=false;
+  document.getElementById('goBtn').disabled = false;
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
 function copyLink(){
-  const link=document.getElementById('shareLink').textContent;
-  navigator.clipboard.writeText(link).catch(()=>{const ta=document.createElement('textarea');ta.value=link;ta.style.cssText='position:fixed;left:-9999px;';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);});
+  const link = document.getElementById('shareLink').textContent;
+  navigator.clipboard.writeText(link).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=link;ta.style.cssText='position:fixed;left:-9999px;';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+  });
   const btn=document.getElementById('copyBtn');
-  btn.textContent='✓ Link copied — paste into WhatsApp or email';btn.classList.add('done');
+  btn.textContent='✓ Copied — paste into WhatsApp or email';btn.classList.add('done');
   setTimeout(()=>{btn.textContent='Copy link — paste into WhatsApp or email →';btn.classList.remove('done');},3000);
 }
 
@@ -326,21 +339,37 @@ function showPreview(){
 function renderReport(data){
   const {dealer,brand,contact,city,booking,image,comps}=data;
   const threatNames=(comps||[]).filter(c=>c.threat==='threat').map(c=>c.name);
+
+  // Hero image
   const heroBlock=document.getElementById('heroBlock');
   if(image){
-    const imgSrc=`/api/image-proxy?url=${encodeURIComponent(image)}`;
-    heroBlock.innerHTML=`<div class="hero-img"><img src="${imgSrc}" alt="${dealer}" onerror="this.parentElement.style.display='none'"/><div class="hero-overlay"><div class="hero-badge">Spyne AI</div><div class="hero-dealer">${dealer}</div><div class="hero-tag">${city} · Your inventory, powered by Spyne</div></div></div>`;
-  } else {heroBlock.innerHTML='';}
+    heroBlock.innerHTML=`<div class="hero-img"><img src="${image}" alt="${dealer}" onerror="this.parentElement.style.display='none'"/><div class="hero-overlay"><div class="hero-badge">Spyne AI</div><div class="hero-dealer">${dealer}</div><div class="hero-tag">${city} · Your inventory, powered by Spyne</div></div></div>`;
+  } else { heroBlock.innerHTML=''; }
+
   document.getElementById('rptH1').innerHTML=`${dealer} is losing <span class="acc" id="hRev">$14,000</span> every month after the lights go off.`;
   document.getElementById('rptSub').textContent=`This report estimates the revenue impact of unanswered after-hours calls at ${dealer} in ${city}. Based on NADA and Invoca industry benchmarks. Move the sliders to match your real call volume.`;
   document.getElementById('ecBox').innerHTML=`<strong>${dealer} is already a Spyne Studio AI customer.</strong> Your inventory photos and 360s look great online. But there's a gap Studio can't fix: every buyer who calls after hours, hits voicemail, and buys from ${threatNames[0]||'a competitor'} before Monday morning. That's what VINI AI closes.`;
-  if(threatNames.length>0){document.getElementById('threatBox').innerHTML=`<strong>${threatNames.slice(0,2).join(' and ')}</strong> are actively competing for the same buyers in ${city}. Every unanswered call is a live lead they can close first.`;}
-  else{document.getElementById('threatBox').innerHTML=`There are active <strong>${brand} competitors near ${city}</strong> competing for the same after-hours buyers. Every unanswered call is a live lead going elsewhere.`;}
+
+  if(threatNames.length>0){
+    document.getElementById('threatBox').innerHTML=`<strong>${threatNames.slice(0,2).join(' and ')}</strong> are actively competing for the same buyers in ${city}. Every unanswered call is a live lead they can close first.`;
+  } else {
+    document.getElementById('threatBox').innerHTML=`There are active <strong>${brand} competitors near ${city}</strong> competing for the same after-hours buyers. Every unanswered call is a live lead going elsewhere.`;
+  }
+
   document.getElementById('compTitle').textContent=`${brand} dealerships near ${city}`;
+
   let rows=`<div class="c-row"><div class="cdot green"></div><span class="c-name">${dealer}</span><span class="c-dist">${city}</span><span class="c-badge you">You</span></div>`;
-  if(comps&&comps.length>0){comps.forEach(c=>{rows+=`<div class="c-row"><div class="cdot ${c.threat==='threat'?'red':'amber'}"></div><span class="c-name">${c.name}</span><span class="c-dist">${c.address}${c.rating?' · '+c.rating+'★':''}</span><span class="c-badge ${c.threat}">${c.threat==='threat'?'Active threat':'Watch'}</span></div>`;});document.getElementById('compFoot').textContent=`Live data · Google Places · ${brand} dealers near ${city}`;}
-  else{rows+=`<div class="c-row"><div class="cdot red"></div><span class="c-name">Nearby ${brand} dealer</span><span class="c-dist">Local market</span><span class="c-badge threat">Active threat</span></div>`;document.getElementById('compFoot').textContent='Based on local market data';}
+  if(comps && comps.length>0){
+    comps.forEach(c=>{
+      rows+=`<div class="c-row"><div class="cdot ${c.threat==='threat'?'red':'amber'}"></div><span class="c-name">${c.name}</span><span class="c-dist">${c.address||city+' area'} · ${c.distance||''}mi</span><span class="c-badge ${c.threat}">${c.threat==='threat'?'Active threat':'Watch'}</span></div>`;
+    });
+    document.getElementById('compFoot').textContent=`${brand} dealers near ${city} · Local market data`;
+  } else {
+    rows+=`<div class="c-row"><div class="cdot red"></div><span class="c-name">Nearby ${brand} dealer</span><span class="c-dist">Local market</span><span class="c-badge threat">Active threat</span></div>`;
+    document.getElementById('compFoot').textContent='Based on local market data';
+  }
   document.getElementById('compRows').innerHTML=rows;
+
   document.getElementById('ctaT').textContent=`VINI closes this gap for ${dealer}.`;
   document.getElementById('ctaS').textContent=`Every after-hours call answered in under 5 seconds. Every lead qualified. Every appointment booked automatically — so ${dealer} captures the revenue that's currently going to ${threatNames[0]||'the competition'}.`;
   document.getElementById('ctaBtn').href=booking;
@@ -350,16 +379,25 @@ function renderReport(data){
 function calc(){
   const calls=parseInt(document.getElementById('sCalls').value);
   const deal=parseInt(document.getElementById('sDeal').value);
-  document.getElementById('vCalls').textContent=calls;document.getElementById('vDeal').textContent=fmt(deal);
+  document.getElementById('vCalls').textContent=calls;
+  document.getElementById('vDeal').textContent=fmt(deal);
   const ua=Math.round(calls*.58),buy=Math.round(ua*.6),bkd=Math.round(buy*.5),shw=Math.round(bkd*.5),cls=Math.max(1,Math.round(shw*.15)),mo=cls*deal,yr=mo*12;
-  document.getElementById('n1').textContent=calls;document.getElementById('n2').textContent=ua;document.getElementById('n3').textContent=buy;document.getElementById('n4').textContent=bkd;document.getElementById('n5').textContent=shw;document.getElementById('n6').textContent=cls;
-  document.getElementById('b2').style.width=Math.min(100,(ua/calls)*100)+'%';document.getElementById('b3').style.width=Math.min(100,(buy/calls)*100)+'%';document.getElementById('b4').style.width=Math.min(100,(bkd/calls)*100)+'%';document.getElementById('b5').style.width=Math.min(100,(shw/calls)*100)+'%';document.getElementById('b6').style.width=Math.max(2,(cls/calls)*100)+'%';
-  document.getElementById('revMo').textContent=fmt(mo);document.getElementById('revYr').textContent=fmt(yr);document.getElementById('revDeals').textContent=cls;document.getElementById('revDv').textContent=fmt(deal);
+  document.getElementById('n1').textContent=calls;document.getElementById('n2').textContent=ua;
+  document.getElementById('n3').textContent=buy;document.getElementById('n4').textContent=bkd;
+  document.getElementById('n5').textContent=shw;document.getElementById('n6').textContent=cls;
+  document.getElementById('b2').style.width=Math.min(100,(ua/calls)*100)+'%';
+  document.getElementById('b3').style.width=Math.min(100,(buy/calls)*100)+'%';
+  document.getElementById('b4').style.width=Math.min(100,(bkd/calls)*100)+'%';
+  document.getElementById('b5').style.width=Math.min(100,(shw/calls)*100)+'%';
+  document.getElementById('b6').style.width=Math.max(2,(cls/calls)*100)+'%';
+  document.getElementById('revMo').textContent=fmt(mo);document.getElementById('revYr').textContent=fmt(yr);
+  document.getElementById('revDeals').textContent=cls;document.getElementById('revDv').textContent=fmt(deal);
   const hr=document.getElementById('hRev');if(hr)hr.textContent=fmt(mo);
-  document.getElementById('m1').textContent=calls+' calls';document.getElementById('m2').textContent='58% = '+ua+' missed';document.getElementById('m3').textContent='60% = '+buy+' leads';document.getElementById('m4').textContent='50% = '+bkd+' bookings';document.getElementById('m5').textContent='50% = '+shw+' visits';document.getElementById('m6').textContent='15% = '+cls+' deals';document.getElementById('m7').textContent=cls+' × '+fmt(deal)+' = '+fmt(mo)+'/mo';
+  document.getElementById('m1').textContent=calls+' calls';document.getElementById('m2').textContent='58% = '+ua+' missed';
+  document.getElementById('m3').textContent='60% = '+buy+' leads';document.getElementById('m4').textContent='50% = '+bkd+' bookings';
+  document.getElementById('m5').textContent='50% = '+shw+' visits';document.getElementById('m6').textContent='15% = '+cls+' deals';
+  document.getElementById('m7').textContent=cls+' × '+fmt(deal)+' = '+fmt(mo)+'/mo';
 }
-
-function resetTool(){document.getElementById('reportPage').classList.remove('on');document.getElementById('sdrPage').style.display='block';window.scrollTo({top:0,behavior:'smooth'});}
 </script>
 </body>
 </html>
